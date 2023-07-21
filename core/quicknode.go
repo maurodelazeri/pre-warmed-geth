@@ -112,19 +112,19 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	// Marshal the data to JSON
 	data, err := json.MarshalIndent(blockData, "", "  ")
 	if err != nil {
-		panic(err)
+		panic("shitttt MarshalIndent" + err.Error())
 	}
 
 	// Write to a file
 	file, err := os.OpenFile("/tmp/data.json", os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		panic(err)
+		panic("shitttt OpenFile" + err.Error())
 	}
 	defer file.Close()
 
 	_, err = file.Write(data)
 	if err != nil {
-		panic(err)
+		panic("shitttt Write" + err.Error())
 	}
 
 	// Send the data over ZeroMQ
