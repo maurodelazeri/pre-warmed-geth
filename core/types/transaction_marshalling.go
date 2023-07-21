@@ -69,9 +69,6 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 		enc.V = (*hexutil.Big)(itx.V)
 		enc.R = (*hexutil.Big)(itx.R)
 		enc.S = (*hexutil.Big)(itx.S)
-		if tx.Protected() {
-			enc.ChainID = (*hexutil.Big)(tx.ChainId())
-		}
 
 	case *AccessListTx:
 		enc.ChainID = (*hexutil.Big)(itx.ChainID)
@@ -293,10 +290,9 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 			return errors.New("missing required field 'nonce' in transaction")
 		}
 		itx.Nonce = uint64(*dec.Nonce)
-		if dec.To == nil {
-			return errors.New("missing required field 'to' in transaction")
+		if dec.To != nil {
+			itx.To = dec.To
 		}
-		itx.To = *dec.To
 		if dec.Gas == nil {
 			return errors.New("missing required field 'gas' for txdata")
 		}

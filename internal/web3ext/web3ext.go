@@ -30,7 +30,6 @@ var Modules = map[string]string{
 	"txpool":   TxpoolJs,
 	"les":      LESJs,
 	"vflux":    VfluxJs,
-	"dev":      DevJs,
 }
 
 const CliqueJs = `
@@ -496,11 +495,6 @@ web3._extend({
 			call: 'debug_setTrieFlushInterval',
 			params: 1
 		}),
-		new web3._extend.Method({
-			name: 'getTrieFlushInterval',
-			call: 'debug_getTrieFlushInterval',
-			params: 0
-		}),
 	],
 	properties: []
 });
@@ -647,6 +641,8 @@ web3._extend({
 		new web3._extend.Method({
 			name: 'start',
 			call: 'miner_start',
+			params: 1,
+			inputFormatter: [null]
 		}),
 		new web3._extend.Method({
 			name: 'stop',
@@ -885,24 +881,5 @@ web3._extend({
 			getter: 'vflux_requestStats'
 		}),
 	]
-});
-`
-
-const DevJs = `
-web3._extend({
-	property: 'dev',
-	methods:
-	[
-		new web3._extend.Method({
-			name: 'addWithdrawal',
-			call: 'dev_addWithdrawal',
-			params: 1
-		}),
-		new web3._extend.Method({
-			name: 'setFeeRecipient',
-			call: 'dev_setFeeRecipient',
-			params: 1
-		}),
-	],
 });
 `
