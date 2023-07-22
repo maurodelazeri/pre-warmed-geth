@@ -155,29 +155,37 @@ func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
 	var wg sync.WaitGroup
 	wg.Add(len(txs))
 
-	s, err := bc.StateAt(head.Root())
-	if s == nil || err != nil {
-		fmt.Println("state is nil or err:", err)
-		return nil
-	}
-	state := s.Copy()
-
 	for _, tx := range txs {
-		// Start a goroutine for each transaction
-		go func(tx *types.Transaction) {
-			defer wg.Done()
+		// If the transaction is not a contract creation
+		if tx.To() != nil {
+			// Start a goroutine for each transaction
+			go func(tx *types.Transaction) {
+				defer wg.Done()
 
-			// If the transaction is not a contract creation
-			if to := tx.To(); to != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+
+				rawClient, err := rpc.DialContext(ctx, "http://127.0.0.1:8545")
+				if err != nil {
+					fmt.Println("Failed to connect to the Ethereum client: ", err)
+					return
+				}
+
+				account := tx.To()
+				var hexBalance string
+				err = rawClient.CallContext(ctx, &hexBalance, "eth_getBalance", account, "latest")
+				if err != nil {
+					fmt.Println("Failed to get balance for account", account.Hex(), err)
+					return
+				}
+
 				// Send the 'to' address and its balance to the results channel
-				balance := state.GetBalance(*to)
-				hexBalance := hexutil.EncodeBig(balance)
 				resultsCh <- struct {
 					address common.Address
 					balance string
-				}{*to, hexBalance}
-			}
-		}(tx)
+				}{*account, hexBalance}
+			}(tx)
+		}
 	}
 
 	// Start a goroutine to close the results channel after all other goroutines finish
