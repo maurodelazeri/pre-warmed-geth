@@ -1,10 +1,13 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -13,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type Data struct {
@@ -22,9 +26,14 @@ type Data struct {
 	Current           *big.Int
 	Final             *big.Int
 	Safe              *big.Int
+	Codes             map[common.Hash][]byte
+	Balances          map[common.Address]string
+	Traces            map[string]json.RawMessage
 }
 
 func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
+	start := time.Now() // Start the timer
+
 	receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
 	if err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions()); err != nil {
 		log.Error("QN - Failed to derive block receipts fields", "hash", head.Hash(), "number", head.NumberU64(), "err", err)
@@ -33,9 +42,9 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	blockWithHashOnly := bc.getBlockByNumber(head, true, false)
 	blockWithFullTx := bc.getBlockByNumber(head, true, true)
 
-	// codes := bc.getCodes(head)
-	// balances := bc.getBalances(head)
-	// trace := traceBlockByNumber(head)
+	codes := bc.getCodes(head)
+	balances := bc.getBalances(head)
+	traces, _ := TracerBlockByNumber(head.NumberU64())
 
 	current := bc.CurrentBlock().Number
 	final := bc.CurrentFinalBlock().Number
@@ -45,9 +54,12 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 		BlockWithHashOnly: blockWithHashOnly,
 		BlockWithFullTx:   blockWithFullTx,
 		Receipts:          receipts,
+		Codes:             codes,
 		Current:           current,
 		Final:             final,
 		Safe:              safe,
+		Balances:          balances,
+		Traces:            traces,
 	}
 
 	// Marshal the data to JSON
@@ -66,24 +78,164 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 		fmt.Println(err)
 	}
 
+	elapsed := time.Since(start) // Calculate elapsed time
+	fmt.Println("cache function took %s", elapsed)
 }
 
-func traceBlockByNumber(head *types.Block) interface{} {
-	return nil
+func TracerBlockByNumber(blockNumber uint64) (map[string]json.RawMessage, error) {
+	timeoutDuration, _ := time.ParseDuration("300s")
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
+	defer cancel()
+
+	rawClient, err := rpc.DialContext(ctx, "http://127.0.0.1:8545")
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Ethereum node: %v", err)
+	}
+
+	blockNum := hexutil.EncodeUint64(blockNumber)
+	var responseWith, responseWithout json.RawMessage
+	var errWith, errWithout error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		errWith = rawClient.CallContext(ctx, &responseWith, "debug_traceBlockByNumber", blockNum, map[string]interface{}{
+			"tracer": "callTracer",
+			"tracerConfig": map[string]interface{}{
+				"withLog":     true,
+				"onlyTopCall": false,
+			},
+		})
+	}()
+
+	go func() {
+		defer wg.Done()
+		errWithout = rawClient.CallContext(ctx, &responseWithout, "debug_traceBlockByNumber", blockNum, map[string]interface{}{
+			"tracer": "callTracer",
+			"tracerConfig": map[string]interface{}{
+				"withLog":     false,
+				"onlyTopCall": false,
+			},
+		})
+	}()
+
+	wg.Wait()
+
+	if errWith != nil {
+		return nil, fmt.Errorf("failed to trace block by number with logs: %v", errWith)
+	}
+
+	if errWithout != nil {
+		return nil, fmt.Errorf("failed to trace block by number without logs: %v", errWithout)
+	}
+
+	result := make(map[string]json.RawMessage)
+	result["with"] = responseWith
+	result["without"] = responseWithout
+
+	return result, nil
 }
 
-func (bc *BlockChain) getBalances(head *types.Block) interface{} {
-	return nil
+func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
+	txs := head.Transactions()
+
+	// Initialize the results map
+	results := make(map[common.Address]string)
+
+	// Create a channel to collect results from goroutines
+	resultsCh := make(chan struct {
+		address common.Address
+		balance string
+	})
+
+	// Create a WaitGroup to ensure all goroutines finish
+	var wg sync.WaitGroup
+	wg.Add(len(txs))
+
+	state, err := bc.StateAt(head.Root())
+	if state == nil || err != nil {
+		fmt.Println("state is nil or err:", err)
+		return nil
+	}
+
+	for _, tx := range txs {
+		// Start a goroutine for each transaction
+		go func(tx *types.Transaction) {
+			defer wg.Done()
+
+			// If the transaction is not a contract creation
+			if tx.To() != nil {
+				// Send the 'to' address and its balance to the results channel
+				balance := state.GetBalance(*tx.To())
+				hexBalance := hexutil.EncodeBig(balance)
+				resultsCh <- struct {
+					address common.Address
+					balance string
+				}{*tx.To(), hexBalance}
+			}
+		}(tx)
+	}
+
+	// Start a goroutine to close the results channel after all other goroutines finish
+	go func() {
+		wg.Wait()
+		close(resultsCh)
+	}()
+
+	// Collect results from the channel
+	for result := range resultsCh {
+		results[result.address] = result.balance
+	}
+
+	return results
 }
 
-func (bc *BlockChain) getCodes(head *types.Block) interface{} {
-	// state, err := bc.StateAt(root)
-	// if state == nil || err != nil {
-	// 	return nil, err
-	// }
-	// code := state.GetCode(addr)
-	// return code, nil
-	return nil
+func (bc *BlockChain) getCodes(head *types.Block) map[common.Hash][]byte {
+	txs := head.Transactions()
+
+	// Initialize the results map
+	results := make(map[common.Hash][]byte)
+
+	// Create a channel to collect results from goroutines
+	resultsCh := make(chan struct {
+		hash  common.Hash
+		input []byte
+	})
+
+	// Create a WaitGroup to ensure all goroutines finish
+	var wg sync.WaitGroup
+	wg.Add(len(txs))
+
+	for _, tx := range txs {
+		// Start a goroutine for each transaction
+		go func(tx *types.Transaction) {
+			defer wg.Done()
+
+			// Check if the transaction is a contract creation
+			if tx.To() == nil {
+				// If it is, send the transaction hash and input data to the results channel
+				resultsCh <- struct {
+					hash  common.Hash
+					input []byte
+				}{tx.Hash(), tx.Data()}
+			}
+		}(tx)
+	}
+
+	// Start a goroutine to close the results channel after all other goroutines finish
+	go func() {
+		wg.Wait()
+		close(resultsCh)
+	}()
+
+	// Collect results from the channel
+	for result := range resultsCh {
+		results[result.hash] = result.input
+	}
+
+	return results
 }
 
 // getBlockByNumber
