@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -26,7 +27,7 @@ type Data struct {
 	Current           *big.Int
 	Final             *big.Int
 	Safe              *big.Int
-	Codes             map[common.Hash][]byte
+	Codes             map[common.Address][]byte
 	Balances          map[common.Address]string
 	Traces            map[string]json.RawMessage
 }
@@ -43,7 +44,7 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	blockWithFullTx := bc.getBlockByNumber(head, true, true)
 
 	codes := bc.getCodes(head)
-	//balances := bc.getBalances(head)
+	balances := bc.getBalances(head)
 	traces, _ := TracerBlockByNumber(head.NumberU64())
 
 	current := bc.CurrentBlock().Number
@@ -58,8 +59,8 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 		Current:           current,
 		Final:             final,
 		Safe:              safe,
-		// Balances:          balances,
-		Traces: traces,
+		Balances:          balances,
+		Traces:            traces,
 	}
 
 	// Marshal the data to JSON
@@ -166,14 +167,14 @@ func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
 			defer wg.Done()
 
 			// If the transaction is not a contract creation
-			if tx.To() != nil {
+			if to := tx.To(); to != nil {
 				// Send the 'to' address and its balance to the results channel
-				balance := state.GetBalance(*tx.To())
+				balance := state.GetBalance(*to)
 				hexBalance := hexutil.EncodeBig(balance)
 				resultsCh <- struct {
 					address common.Address
 					balance string
-				}{*tx.To(), hexBalance}
+				}{*to, hexBalance}
 			}
 		}(tx)
 	}
@@ -192,15 +193,15 @@ func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
 	return results
 }
 
-func (bc *BlockChain) getCodes(head *types.Block) map[common.Hash][]byte {
+func (bc *BlockChain) getCodes(head *types.Block) map[common.Address][]byte {
 	txs := head.Transactions()
 
 	// Initialize the results map
-	results := make(map[common.Hash][]byte)
+	results := make(map[common.Address][]byte)
 
 	// Create a channel to collect results from goroutines
 	resultsCh := make(chan struct {
-		hash  common.Hash
+		addr  common.Address
 		input []byte
 	})
 
@@ -215,11 +216,14 @@ func (bc *BlockChain) getCodes(head *types.Block) map[common.Hash][]byte {
 
 			// Check if the transaction is a contract creation
 			if tx.To() == nil {
-				// If it is, send the transaction hash and input data to the results channel
+				signer := types.NewEIP155Signer(bc.chainConfig.ChainID)
+				from, _ := types.Sender(signer, tx)
+				contractAddress := crypto.CreateAddress(from, tx.Nonce())
+				// If it is, send the contract address and input data to the results channel
 				resultsCh <- struct {
-					hash  common.Hash
+					addr  common.Address
 					input []byte
-				}{tx.Hash(), tx.Data()}
+				}{contractAddress, tx.Data()}
 			}
 		}(tx)
 	}
@@ -232,7 +236,7 @@ func (bc *BlockChain) getCodes(head *types.Block) map[common.Hash][]byte {
 
 	// Collect results from the channel
 	for result := range resultsCh {
-		results[result.hash] = result.input
+		results[result.addr] = result.input
 	}
 
 	return results
