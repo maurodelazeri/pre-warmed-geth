@@ -32,6 +32,7 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	blockWithHashOnly := bc.getBlockByNumber(head, true, false)
 	blockWithFullTx := bc.getBlockByNumber(head, true, true)
 
+	fmt.Println(blockWithHashOnly, blockWithFullTx)
 	// codes := bc.getCodes(head)
 
 	// balances := bc.getBalances(head)
@@ -39,6 +40,7 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	current := bc.CurrentBlock()
 	final := bc.CurrentFinalBlock()
 	safe := bc.CurrentSafeBlock()
+	fmt.Println(current, final, safe)
 
 	// trace := traceBlockByNumber(head)
 
