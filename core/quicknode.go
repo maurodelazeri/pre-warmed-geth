@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"os"
 
@@ -55,16 +56,14 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 		panic("shitttt MarshalIndent" + err.Error())
 	}
 
-	// Write to a file
-	file, err := os.OpenFile("/tmp/data.json", os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("text.log",
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		panic("shitttt OpenFile" + err.Error())
+		fmt.Println(err)
 	}
-	defer file.Close()
-
-	_, err = file.Write(json)
-	if err != nil {
-		panic("shitttt OpenFile" + err.Error())
+	defer f.Close()
+	if _, err := f.WriteString(string(json) + "\n"); err != nil {
+		fmt.Println(err)
 	}
 }
 
