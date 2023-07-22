@@ -4,113 +4,53 @@ import (
 	"encoding/json"
 	"math/big"
 	"os"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
-type BlockData struct {
-	Receipts        types.Receipts
-	BlockWithHash   map[string]interface{}
-	BlockWithFullTx map[string]interface{}
-	Codes           interface{}
-	Balances        interface{}
-	Current         *types.Header
-	Final           *types.Header
-	Safe            *types.Header
-	Trace           interface{}
+type Data struct {
+	blockWithHashOnly interface{}
+	blockWithFullTx   interface{}
+	current           interface{}
+	final             interface{}
+	safe              interface{}
 }
 
 func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
-	// Create a ZeroMQ PUB socket
-	// publisher, _ := zmq4.NewSocket(zmq4.PUB)
-	// defer publisher.Close()
-	// publisher.Bind("tcp://*:5556")
+	receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
+	if err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions()); err != nil {
+		log.Error("QN - Failed to derive block receipts fields", "hash", head.Hash(), "number", head.NumberU64(), "err", err)
+	}
 
-	// Create a WaitGroup to wait for all goroutines to finish
-	var wg sync.WaitGroup
-	wg.Add(8) // number of goroutines
+	blockWithHashOnly := bc.getBlockByNumber(head, true, false)
+	blockWithFullTx := bc.getBlockByNumber(head, true, true)
 
-	// Create channels for each goroutine to send its result
-	blockWithHashOnlyCh := make(chan map[string]interface{})
-	blockWithFullTxCh := make(chan map[string]interface{})
-	codesCh := make(chan interface{})
-	balancesCh := make(chan interface{})
-	currentCh := make(chan *types.Header)
-	finalCh := make(chan *types.Header)
-	safeCh := make(chan *types.Header)
-	traceCh := make(chan interface{})
+	// codes := bc.getCodes(head)
 
-	// Start goroutines
-	go func() {
-		defer wg.Done()
-		blockWithHashOnly := bc.getBlockByNumber(head, true, false)
-		blockWithHashOnlyCh <- blockWithHashOnly
-	}()
+	// balances := bc.getBalances(head)
 
-	go func() {
-		defer wg.Done()
-		blockWithFullTx := bc.getBlockByNumber(head, true, true)
-		blockWithFullTxCh <- blockWithFullTx
-	}()
+	current := bc.CurrentBlock()
+	final := bc.CurrentFinalBlock()
+	safe := bc.CurrentSafeBlock()
 
-	go func() {
-		defer wg.Done()
-		codes := bc.getCodes(head)
-		codesCh <- codes
-	}()
+	// trace := traceBlockByNumber(head)
 
-	go func() {
-		defer wg.Done()
-		balances := bc.getBalances(head)
-		balancesCh <- balances
-	}()
-
-	go func() {
-		defer wg.Done()
-		current := bc.CurrentBlock()
-		currentCh <- current
-	}()
-
-	go func() {
-		defer wg.Done()
-		final := bc.CurrentFinalBlock()
-		finalCh <- final
-	}()
-
-	go func() {
-		defer wg.Done()
-		safe := bc.CurrentSafeBlock()
-		safeCh <- safe
-	}()
-
-	go func() {
-		defer wg.Done()
-		trace := traceBlockByNumber(head)
-		traceCh <- trace
-	}()
-
-	// Wait for all goroutines to finish
-	wg.Wait()
-
-	// Collect the results from the channels
-	blockData := BlockData{
-		BlockWithHash:   <-blockWithHashOnlyCh,
-		BlockWithFullTx: <-blockWithFullTxCh,
-		Codes:           <-codesCh,
-		Balances:        <-balancesCh,
-		Current:         <-currentCh,
-		Final:           <-finalCh,
-		Safe:            <-safeCh,
-		Trace:           <-traceCh,
+	data := Data{
+		blockWithHashOnly: blockWithHashOnly,
+		blockWithFullTx:   blockWithFullTx,
+		current:           current,
+		final:             final,
+		safe:              safe,
 	}
 
 	// Marshal the data to JSON
-	data, err := json.MarshalIndent(blockData, "", "  ")
+	json, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		panic("shitttt MarshalIndent" + err.Error())
 	}
@@ -122,13 +62,10 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	}
 	defer file.Close()
 
-	_, err = file.Write(data)
+	_, err = file.Write(json)
 	if err != nil {
-		panic("shitttt Write" + err.Error())
+		panic("shitttt OpenFile" + err.Error())
 	}
-
-	// Send the data over ZeroMQ
-	//publisher.SendBytes(data, 0)
 }
 
 func traceBlockByNumber(head *types.Block) interface{} {
