@@ -18,7 +18,10 @@ import (
 type Data struct {
 	BlockWithHashOnly map[string]interface{} // Assume YourBlockType is the type of your blocks
 	BlockWithFullTx   map[string]interface{} // replace it with the actual type
-	receipts          types.Receipts
+	Receipts          types.Receipts
+	Current           *big.Int
+	Final             *big.Int
+	Safe              *big.Int
 }
 
 func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
@@ -30,21 +33,21 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	blockWithHashOnly := bc.getBlockByNumber(head, true, false)
 	blockWithFullTx := bc.getBlockByNumber(head, true, true)
 
-	//fmt.Println(blockWithHashOnly, blockWithFullTx)
 	// codes := bc.getCodes(head)
-
 	// balances := bc.getBalances(head)
-
-	// current := bc.CurrentBlock()
-	// final := bc.CurrentFinalBlock()
-	// safe := bc.CurrentSafeBlock()
-
 	// trace := traceBlockByNumber(head)
+
+	current := bc.CurrentBlock().Number
+	final := bc.CurrentFinalBlock().Number
+	safe := bc.CurrentSafeBlock().Number
 
 	data := Data{
 		BlockWithHashOnly: blockWithHashOnly,
 		BlockWithFullTx:   blockWithFullTx,
-		receipts:          receipts,
+		Receipts:          receipts,
+		Current:           current,
+		Final:             final,
+		Safe:              safe,
 	}
 
 	// Marshal the data to JSON
@@ -54,7 +57,7 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	}
 
 	f, err := os.OpenFile("text.log",
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -62,6 +65,7 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	if _, err := f.WriteString(string(json) + "\n"); err != nil {
 		fmt.Println(err)
 	}
+
 }
 
 func traceBlockByNumber(head *types.Block) interface{} {
