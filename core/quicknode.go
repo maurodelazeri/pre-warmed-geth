@@ -155,11 +155,12 @@ func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
 	var wg sync.WaitGroup
 	wg.Add(len(txs))
 
-	state, err := bc.StateAt(head.Root())
-	if state == nil || err != nil {
+	s, err := bc.StateAt(head.Root())
+	if s == nil || err != nil {
 		fmt.Println("state is nil or err:", err)
 		return nil
 	}
+	state := s.Copy()
 
 	for _, tx := range txs {
 		// Start a goroutine for each transaction
