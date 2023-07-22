@@ -154,45 +154,54 @@ func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
 	// Create a WaitGroup to ensure all goroutines finish
 	var wg sync.WaitGroup
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	rawClient, err := rpc.DialContext(ctx, "http://127.0.0.1:8545")
-	if err != nil {
-		fmt.Println("Failed to connect to the Ethereum client:", err)
-		return nil
-	}
-
-	signer := types.NewEIP155Signer(bc.chainConfig.ChainID)
+	// Semaphore to limit concurrent requests
+	sem := make(chan struct{}, 20) // Adjust this number based on your client's capabilities
 
 	for _, tx := range txs {
-		from, err := types.Sender(signer, tx)
-		if err != nil {
-			fmt.Println("Failed to get from address:", err)
-			continue
-		}
-		to := tx.To()
+		wg.Add(1)
+		go func(tx *types.Transaction) {
+			defer wg.Done()
 
-		addresses := []common.Address{from, *to}
-		for _, address := range addresses {
-			wg.Add(1)
-			go func(address common.Address) {
-				defer wg.Done() // Ensure wg.Done() is called even if an error occurs
+			sem <- struct{}{}        // Acquire a token
+			defer func() { <-sem }() // Release the token when finished
 
-				var hexBalance string
-				err = rawClient.CallContext(ctx, &hexBalance, "eth_getBalance", address, "latest")
-				if err != nil {
-					fmt.Println("Failed to get balance for account", address.Hex(), err)
-					return
-				}
+			signer := types.LatestSignerForChainID(bc.chainConfig.ChainID)
+			from, err := types.Sender(signer, tx)
+			if err != nil {
+				fmt.Println("Failed to get from address:", err)
+				return
+			}
 
-				// Send the address and its balance to the results channel
+			// If the transaction has a 'to' address
+			if tx.To() != nil {
+				to := tx.To()
+
+				// Get the balance for 'from' and 'to' addresses
+				fromBalance, toBalance := getBalance(from), getBalance(*to)
+
+				// Send the 'from' address and its balance to the results channel
 				resultsCh <- struct {
 					address common.Address
 					balance string
-				}{address, hexBalance}
-			}(address)
-		}
+				}{from, fromBalance}
+
+				// Send the 'to' address and its balance to the results channel
+				resultsCh <- struct {
+					address common.Address
+					balance string
+				}{*to, toBalance}
+			} else {
+				// This is a contract creation transaction,
+				// so we only get the balance for the 'from' address
+				fromBalance := getBalance(from)
+
+				// Send the 'from' address and its balance to the results channel
+				resultsCh <- struct {
+					address common.Address
+					balance string
+				}{from, fromBalance}
+			}
+		}(tx)
 	}
 
 	// Start a goroutine to close the results channel after all other goroutines finish
@@ -207,6 +216,25 @@ func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
 	}
 
 	return results
+}
+
+func getBalance(address common.Address) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rawClient, err := rpc.DialContext(ctx, "http://127.0.0.1:8545")
+	if err != nil {
+		fmt.Println("Failed to connect to the Ethereum client: ", err)
+		return ""
+	}
+
+	var hexBalance string
+	err = rawClient.CallContext(ctx, &hexBalance, "eth_getBalance", address, "latest")
+	if err != nil {
+		fmt.Println("Failed to get balance for account", address.Hex(), err)
+		return ""
+	}
+	return hexBalance
 }
 
 func (bc *BlockChain) getCodes(head *types.Block) map[common.Address][]byte {
