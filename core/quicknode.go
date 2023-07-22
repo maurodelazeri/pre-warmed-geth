@@ -163,7 +163,7 @@ func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
 		return nil
 	}
 
-	signer := types.NewEIP155Signer(bc.chainConfig.ChainID()) // Use chain ID from blockchain configuration
+	signer := types.NewEIP155Signer(bc.chainConfig.ChainID)
 
 	for _, tx := range txs {
 		from, err := types.Sender(signer, tx)
