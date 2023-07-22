@@ -16,11 +16,9 @@ import (
 )
 
 type Data struct {
-	blockWithHashOnly interface{}
-	blockWithFullTx   interface{}
-	current           interface{}
-	final             interface{}
-	safe              interface{}
+	BlockWithHashOnly map[string]interface{} // Assume YourBlockType is the type of your blocks
+	BlockWithFullTx   map[string]interface{} // replace it with the actual type
+	receipts          types.Receipts
 }
 
 func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
@@ -32,24 +30,21 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	blockWithHashOnly := bc.getBlockByNumber(head, true, false)
 	blockWithFullTx := bc.getBlockByNumber(head, true, true)
 
-	fmt.Println(blockWithHashOnly, blockWithFullTx)
+	//fmt.Println(blockWithHashOnly, blockWithFullTx)
 	// codes := bc.getCodes(head)
 
 	// balances := bc.getBalances(head)
 
-	current := bc.CurrentBlock()
-	final := bc.CurrentFinalBlock()
-	safe := bc.CurrentSafeBlock()
-	fmt.Println(current, final, safe)
+	// current := bc.CurrentBlock()
+	// final := bc.CurrentFinalBlock()
+	// safe := bc.CurrentSafeBlock()
 
 	// trace := traceBlockByNumber(head)
 
 	data := Data{
-		blockWithHashOnly: blockWithHashOnly,
-		blockWithFullTx:   blockWithFullTx,
-		current:           current,
-		final:             final,
-		safe:              safe,
+		BlockWithHashOnly: blockWithHashOnly,
+		BlockWithFullTx:   blockWithFullTx,
+		receipts:          receipts,
 	}
 
 	// Marshal the data to JSON
