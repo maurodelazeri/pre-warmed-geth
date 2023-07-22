@@ -43,7 +43,7 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 	blockWithFullTx := bc.getBlockByNumber(head, true, true)
 
 	codes := bc.getCodes(head)
-	balances := bc.getBalances(head)
+	//balances := bc.getBalances(head)
 	traces, _ := TracerBlockByNumber(head.NumberU64())
 
 	current := bc.CurrentBlock().Number
@@ -58,8 +58,8 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 		Current:           current,
 		Final:             final,
 		Safe:              safe,
-		Balances:          balances,
-		Traces:            traces,
+		// Balances:          balances,
+		Traces: traces,
 	}
 
 	// Marshal the data to JSON
