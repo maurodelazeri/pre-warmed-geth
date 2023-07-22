@@ -15,14 +15,14 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type Data struct {
-	BlockWithHashOnly map[string]interface{} // Assume YourBlockType is the type of your blocks
-	BlockWithFullTx   map[string]interface{} // replace it with the actual type
+	// Assume your types for the following fields
+	BlockWithHashOnly map[string]interface{}
+	BlockWithFullTx   map[string]interface{}
 	Receipts          types.Receipts
 	Current           *big.Int
 	Final             *big.Int
@@ -33,46 +33,115 @@ type Data struct {
 }
 
 func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
-	start := time.Now() // Start the timer
+	start := time.Now()
 
-	receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
-	if err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions()); err != nil {
-		log.Error("QN - Failed to derive block receipts fields", "hash", head.Hash(), "number", head.NumberU64(), "err", err)
+	type result struct {
+		value interface{}
 	}
 
-	blockWithHashOnly := bc.getBlockByNumber(head, true, false)
-	blockWithFullTx := bc.getBlockByNumber(head, true, true)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	codes := bc.getCodes(head)
-	balances := bc.getBalances(head)
-	traces, _ := TracerBlockByNumber(head.NumberU64())
+	var wg sync.WaitGroup
 
-	current := bc.CurrentBlock().Number
-	final := bc.CurrentFinalBlock().Number
-	safe := bc.CurrentSafeBlock().Number
+	send := func(ch chan<- result, f func() (interface{}, error)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			v, err := f()
+			if err != nil {
+				fmt.Println("Failed to execute function:", err)
+				cancel()
+				return
+			}
+			ch <- result{value: v}
+		}()
+	}
+
+	resCh := make(chan result, 9)
+
+	send(resCh, func() (interface{}, error) {
+		receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
+		err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions())
+		return receipts, err
+	})
+
+	send(resCh, func() (interface{}, error) { return bc.getBlockByNumber(head, true, false), nil })
+	send(resCh, func() (interface{}, error) { return bc.getBlockByNumber(head, true, true), nil })
+	send(resCh, func() (interface{}, error) { return bc.getCodes(head), nil })
+	send(resCh, func() (interface{}, error) { return bc.getBalances(head), nil })
+	send(resCh, func() (interface{}, error) { return TracerBlockByNumber(head.NumberU64()) })
+	send(resCh, func() (interface{}, error) { return bc.CurrentBlock().Number, nil })
+	send(resCh, func() (interface{}, error) { return bc.CurrentFinalBlock().Number, nil })
+	send(resCh, func() (interface{}, error) { return bc.CurrentSafeBlock().Number, nil })
+
+	go func() {
+		wg.Wait()
+		close(resCh)
+	}()
+
+	var (
+		receipts          types.Receipts
+		blockWithHashOnly map[string]interface{}
+		blockWithFullTx   map[string]interface{}
+		codes             map[common.Address][]byte
+		balances          map[common.Address]string
+		traces            map[string]json.RawMessage
+		current           *big.Int
+		final             *big.Int
+		safe              *big.Int
+	)
+
+	for res := range resCh {
+		switch v := res.value.(type) {
+		case types.Receipts:
+			receipts = v
+		case map[string]interface{}:
+			if blockWithHashOnly == nil {
+				blockWithHashOnly = v
+			} else {
+				blockWithFullTx = v
+			}
+		case map[common.Address][]byte:
+			codes = v
+		case map[common.Address]string:
+			balances = v
+		case map[string]json.RawMessage:
+			traces = v
+		case *big.Int:
+			if current == nil {
+				current = v
+			} else if final == nil {
+				final = v
+			} else {
+				safe = v
+			}
+		default:
+			fmt.Printf("Unknown type in result: %T\n", v)
+		}
+	}
 
 	data := Data{
 		BlockWithHashOnly: blockWithHashOnly,
 		BlockWithFullTx:   blockWithFullTx,
 		Receipts:          receipts,
 		Codes:             codes,
+		Balances:          balances,
+		Traces:            traces,
 		Current:           current,
 		Final:             final,
 		Safe:              safe,
-		Balances:          balances,
-		Traces:            traces,
 	}
 
-	// Marshal the data to JSON
 	json, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		panic("shitttt MarshalIndent" + err.Error())
+		panic("Failed to marshal data: " + err.Error())
 	}
 
-	f, err := os.OpenFile("text.log",
-		os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("text.log", os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	defer f.Close()
 	if _, err := f.WriteString(string(json) + "\n"); err != nil {
