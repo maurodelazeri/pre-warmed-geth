@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"os"
 	"sync"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/pebbe/zmq4"
 )
 
 type Data struct {
@@ -32,7 +32,44 @@ type Data struct {
 	Traces            map[string]json.RawMessage
 }
 
-func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
+type ZmqSender struct {
+	socket *zmq4.Socket
+}
+
+func NewZmqSender(endpoint string) *ZmqSender {
+	sender := &ZmqSender{}
+	for {
+		socket, err := zmq4.NewSocket(zmq4.PUSH)
+		if err != nil {
+			fmt.Println("Failed to create ZMQ socket:", err)
+			continue
+		}
+		err = socket.Connect(endpoint)
+		if err != nil {
+			fmt.Println("Failed to connect to ZMQ server:", err)
+			socket.Close()
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		sender.socket = socket
+		break
+	}
+	return sender
+}
+
+func (s *ZmqSender) Send(data []byte) error {
+	for {
+		_, err := s.socket.SendBytes(data, 0)
+		if err != nil {
+			fmt.Println("Failed to send data:", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		return nil
+	}
+}
+
+func (bc *BlockChain) QNCache(head *types.Block) {
 	start := time.Now()
 
 	type result struct {
@@ -135,17 +172,23 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 
 	json, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		panic("Failed to marshal data: " + err.Error())
-	}
-
-	f, err := os.OpenFile("text.log", os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Println(err)
+		fmt.Println("failed to marshal data:", err.Error())
 		return
 	}
-	defer f.Close()
-	if _, err := f.WriteString(string(json) + "\n"); err != nil {
-		fmt.Println(err)
+
+	// f, err := os.OpenFile("text.log", os.O_CREATE|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
+	// defer f.Close()
+	// if _, err := f.WriteString(string(json) + "\n"); err != nil {
+	// 	fmt.Println(err)
+	// }
+
+	err = bc.zmqSender.Send(json)
+	if err != nil {
+		fmt.Println("failed to send data to ZMQ:", err)
 	}
 
 	elapsed := time.Since(start)

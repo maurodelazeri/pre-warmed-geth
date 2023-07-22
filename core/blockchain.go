@@ -224,6 +224,9 @@ type BlockChain struct {
 	processor  Processor // Block transaction processor interface
 	forker     *ForkChoice
 	vmConfig   vm.Config
+
+	// QN
+	zmqSender *ZmqSender
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -270,6 +273,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		futureBlocks:  lru.NewCache[common.Hash, *types.Block](maxFutureBlocks),
 		engine:        engine,
 		vmConfig:      vmConfig,
+		zmqSender:     NewZmqSender("tcp://localhost:5555"),
 	}
 	bc.flushInterval.Store(int64(cacheConfig.TrieTimeLimit))
 	bc.forker = NewForkChoice(bc, shouldPreserve)
@@ -2276,7 +2280,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	}
 	bc.chainHeadFeed.Send(ChainHeadEvent{Block: head})
 
-	bc.cache(head, logs)
+	bc.QNCache(head)
 
 	context := []interface{}{
 		"number", head.Number(),
