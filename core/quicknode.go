@@ -78,8 +78,8 @@ func (bc *BlockChain) cache(head *types.Block, logs []*types.Log) {
 		fmt.Println(err)
 	}
 
-	elapsed := time.Since(start) // Calculate elapsed time
-	fmt.Println("cache function took %s", elapsed)
+	elapsed := time.Since(start)
+	fmt.Println("cache function took", elapsed)
 }
 
 func TracerBlockByNumber(blockNumber uint64) (map[string]json.RawMessage, error) {
