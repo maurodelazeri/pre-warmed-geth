@@ -1,5 +1,7 @@
 package core
 
+// apt-get install libzmq3-dev
+
 import (
 	"context"
 	"encoding/json"
