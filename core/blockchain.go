@@ -2276,7 +2276,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	}
 	bc.chainHeadFeed.Send(ChainHeadEvent{Block: head})
 
-	bc.cache(head, logs)
+	//bc.cache(head, logs)
 
 	context := []interface{}{
 		"number", head.Number(),
