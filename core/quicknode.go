@@ -127,19 +127,19 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 	// 	return data, err
 	// })
 
-	send("blockByNumberHashOnly", func() ([]byte, error) {
+	send("bho", func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, false)
 		data, err := json.MarshalIndent(block, "", "  ")
 		return data, err
 	})
 
-	send("blockByNumberFullTx", func() ([]byte, error) {
+	send("bhl", func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, true)
 		data, err := json.MarshalIndent(block, "", "  ")
 		return data, err
 	})
 
-	send("receipts", func() ([]byte, error) {
+	send("rep", func() ([]byte, error) {
 		receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
 		err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions())
 		if err != nil {
@@ -149,19 +149,19 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	send("balances", func() ([]byte, error) {
+	send("bal", func() ([]byte, error) {
 		balances := bc.getBalances(head)
 		data, err := json.MarshalIndent(balances, "", "  ")
 		return data, err
 	})
 
-	send("codes", func() ([]byte, error) {
+	send("cod", func() ([]byte, error) {
 		codes := bc.getCodes(head)
 		data, err := json.MarshalIndent(codes, "", "  ")
 		return data, err
 	})
 
-	send("traces", func() ([]byte, error) {
+	send("tra", func() ([]byte, error) {
 		traces, err := TracerBlockByNumber(head.NumberU64())
 		if err != nil {
 			return nil, err
