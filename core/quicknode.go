@@ -99,7 +99,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 				return
 			}
 
-			prefix := current + "_" + safe + "_" + final + "_"
+			prefix := reference + "_" + current + "_" + safe + "_" + final + "_"
 			v = append([]byte(prefix), v...)
 
 			err = bc.zmqSender.Send(v)
