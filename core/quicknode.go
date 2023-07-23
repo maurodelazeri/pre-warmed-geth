@@ -79,6 +79,10 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 
 	var wg sync.WaitGroup
 
+	current := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentBlock().Number), "0x")
+	safe := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentSafeBlock().Number), "0x")
+	final := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentFinalBlock().Number), "0x")
+
 	send := func(reference string, f func() ([]byte, error)) {
 		wg.Add(1)
 		go func() {
@@ -95,10 +99,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 				return
 			}
 
-			hexWithPrefix := hexutil.EncodeBig(head.Number())
-			hexWithoutPrefix := strings.TrimPrefix(hexWithPrefix, "0x")
-
-			prefix := hexWithoutPrefix + "_" + reference + "_"
+			prefix := current + "_" + safe + "_" + final + "_"
 			v = append([]byte(prefix), v...)
 
 			err = bc.zmqSender.Send(v)
@@ -108,23 +109,23 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		}()
 	}
 
-	send("current", func() ([]byte, error) {
-		current := bc.CurrentBlock().Number
-		data, err := json.MarshalIndent(current, "", "  ")
-		return data, err
-	})
+	// send("current", func() ([]byte, error) {
+	// 	current := bc.CurrentBlock().Number
+	// 	data, err := json.MarshalIndent(current, "", "  ")
+	// 	return data, err
+	// })
 
-	send("final", func() ([]byte, error) {
-		final := bc.CurrentFinalBlock().Number
-		data, err := json.MarshalIndent(final, "", "  ")
-		return data, err
-	})
+	// send("final", func() ([]byte, error) {
+	// 	final := bc.CurrentFinalBlock().Number
+	// 	data, err := json.MarshalIndent(final, "", "  ")
+	// 	return data, err
+	// })
 
-	send("safe", func() ([]byte, error) {
-		safe := bc.CurrentSafeBlock().Number
-		data, err := json.MarshalIndent(safe, "", "  ")
-		return data, err
-	})
+	// send("safe", func() ([]byte, error) {
+	// 	safe := bc.CurrentSafeBlock().Number
+	// 	data, err := json.MarshalIndent(safe, "", "  ")
+	// 	return data, err
+	// })
 
 	send("blockByNumberHashOnly", func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, false)
