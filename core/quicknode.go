@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,124 +75,108 @@ func (s *ZmqSender) Send(data []byte) error {
 func (bc *BlockChain) QNCache(head *types.Block) {
 	start := time.Now()
 
-	type result struct {
-		value interface{}
-	}
-
-	_, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
 
-	send := func(ch chan<- result, f func() (interface{}, error)) {
+	send := func(reference string, f func() ([]byte, error)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			v, err := f()
 			if err != nil {
-				fmt.Println("Failed to execute function:", err)
+				fmt.Printf("Failed to execute function %s: %v\n", reference, err)
 				cancel()
 				return
 			}
-			ch <- result{value: v}
+
+			// nothing to do
+			if len(v) == 0 {
+				return
+			}
+
+			hexWithPrefix := hexutil.EncodeBig(head.Number())
+			hexWithoutPrefix := strings.TrimPrefix(hexWithPrefix, "0x")
+
+			prefix := hexWithoutPrefix + "_" + reference + "_"
+			v = append([]byte(prefix), v...)
+
+			err = bc.zmqSender.Send(v)
+			if err != nil {
+				fmt.Println("failed to send data to ZMQ:", err)
+			}
 		}()
 	}
 
-	resCh := make(chan result, 9)
-
-	send(resCh, func() (interface{}, error) {
+	send("receipts", func() ([]byte, error) {
 		receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
 		err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions())
-		return receipts, err
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.MarshalIndent(receipts, "", "  ")
+		return data, err
 	})
 
-	send(resCh, func() (interface{}, error) { return bc.getBlockByNumber(head, true, false), nil })
-	send(resCh, func() (interface{}, error) { return bc.getBlockByNumber(head, true, true), nil })
-	send(resCh, func() (interface{}, error) { return bc.getCodes(head), nil })
-	send(resCh, func() (interface{}, error) { return bc.getBalances(head), nil })
-	send(resCh, func() (interface{}, error) { return TracerBlockByNumber(head.NumberU64()) })
-	send(resCh, func() (interface{}, error) { return bc.CurrentBlock().Number, nil })
-	send(resCh, func() (interface{}, error) { return bc.CurrentFinalBlock().Number, nil })
-	send(resCh, func() (interface{}, error) { return bc.CurrentSafeBlock().Number, nil })
+	send("blockByNumberHashOnly", func() ([]byte, error) {
+		block := bc.getBlockByNumber(head, true, false)
+		data, err := json.MarshalIndent(block, "", "  ")
+		return data, err
+	})
 
+	send("blockByNumberFullTx", func() ([]byte, error) {
+		block := bc.getBlockByNumber(head, true, true)
+		data, err := json.MarshalIndent(block, "", "  ")
+		return data, err
+	})
+
+	send("codes", func() ([]byte, error) {
+		codes := bc.getCodes(head)
+		data, err := json.MarshalIndent(codes, "", "  ")
+		return data, err
+	})
+
+	send("balances", func() ([]byte, error) {
+		balances := bc.getBalances(head)
+		data, err := json.MarshalIndent(balances, "", "  ")
+		return data, err
+	})
+
+	send("traces", func() ([]byte, error) {
+		traces, err := TracerBlockByNumber(head.NumberU64())
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.MarshalIndent(traces, "", "  ")
+		return data, err
+	})
+
+	send("current", func() ([]byte, error) {
+		current := bc.CurrentBlock().Number
+		data, err := json.MarshalIndent(current, "", "  ")
+		return data, err
+	})
+
+	send("final", func() ([]byte, error) {
+		final := bc.CurrentFinalBlock().Number
+		data, err := json.MarshalIndent(final, "", "  ")
+		return data, err
+	})
+
+	send("safe", func() ([]byte, error) {
+		safe := bc.CurrentSafeBlock().Number
+		data, err := json.MarshalIndent(safe, "", "  ")
+		return data, err
+	})
+
+	// This goroutine will cancel the context after all the other goroutines have finished.
 	go func() {
 		wg.Wait()
-		close(resCh)
+		cancel()
 	}()
 
-	var (
-		receipts          types.Receipts
-		blockWithHashOnly map[string]interface{}
-		blockWithFullTx   map[string]interface{}
-		codes             map[common.Address][]byte
-		balances          map[common.Address]string
-		traces            map[string]json.RawMessage
-		current           *big.Int
-		final             *big.Int
-		safe              *big.Int
-	)
-
-	for res := range resCh {
-		switch v := res.value.(type) {
-		case types.Receipts:
-			receipts = v
-		case map[string]interface{}:
-			if blockWithHashOnly == nil {
-				blockWithHashOnly = v
-			} else {
-				blockWithFullTx = v
-			}
-		case map[common.Address][]byte:
-			codes = v
-		case map[common.Address]string:
-			balances = v
-		case map[string]json.RawMessage:
-			traces = v
-		case *big.Int:
-			if current == nil {
-				current = v
-			} else if final == nil {
-				final = v
-			} else {
-				safe = v
-			}
-		default:
-			fmt.Printf("Unknown type in result: %T\n", v)
-		}
-	}
-
-	data := Data{
-		BlockWithHashOnly: blockWithHashOnly,
-		BlockWithFullTx:   blockWithFullTx,
-		Receipts:          receipts,
-		Codes:             codes,
-		Balances:          balances,
-		Traces:            traces,
-		Current:           current,
-		Final:             final,
-		Safe:              safe,
-	}
-
-	json, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		fmt.Println("failed to marshal data:", err.Error())
-		return
-	}
-
-	// f, err := os.OpenFile("text.log", os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	return
-	// }
-	// defer f.Close()
-	// if _, err := f.WriteString(string(json) + "\n"); err != nil {
-	// 	fmt.Println(err)
-	// }
-
-	err = bc.zmqSender.Send(json)
-	if err != nil {
-		fmt.Println("failed to send data to ZMQ:", err)
-	}
+	// Wait until either all function calls have completed, or there's an error.
+	<-ctx.Done()
 
 	elapsed := time.Since(start)
 	fmt.Println("cache function took", elapsed)
