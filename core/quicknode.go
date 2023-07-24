@@ -43,12 +43,12 @@ type ZmqSender struct {
 func NewZmqSender(endpoint string) *ZmqSender {
 	sender := &ZmqSender{}
 	for {
-		socket, err := zmq4.NewSocket(zmq4.XPUB)
+		socket, err := zmq4.NewSocket(zmq4.PUB) // use PUB type socket
 		if err != nil {
 			fmt.Println("Failed to create ZMQ socket:", err)
 			continue
 		}
-		err = socket.Connect(endpoint)
+		err = socket.Connect(endpoint) // connect to the XSUB socket of the proxy
 		if err != nil {
 			fmt.Println("Failed to connect to ZMQ server:", err)
 			socket.Close()
