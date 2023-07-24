@@ -81,8 +81,8 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 	var wg sync.WaitGroup
 
 	current := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentBlock().Number), "0x")
-	safe := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentSafeBlock().Number), "0x")
-	final := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentFinalBlock().Number), "0x")
+	// safe := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentSafeBlock().Number), "0x")
+	// final := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentFinalBlock().Number), "0x")
 
 	send := func(reference string, f func() ([]byte, error)) {
 		wg.Add(1)
@@ -100,7 +100,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 				return
 			}
 
-			prefix := reference + "_" + current + "_" + safe + "_" + final + "_"
+			prefix := reference + "_" + current
 			v = append([]byte(prefix), v...)
 
 			err = bc.zmqSender.Send(v)
@@ -128,19 +128,19 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 	// 	return data, err
 	// })
 
-	send("bho", func() ([]byte, error) {
+	send("0", func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, false)
 		data, err := json.MarshalIndent(block, "", "  ")
 		return data, err
 	})
 
-	send("bhl", func() ([]byte, error) {
+	send("1", func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, true)
 		data, err := json.MarshalIndent(block, "", "  ")
 		return data, err
 	})
 
-	send("rep", func() ([]byte, error) {
+	send("2", func() ([]byte, error) {
 		receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
 		err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions())
 		if err != nil {
@@ -150,25 +150,42 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	send("bal", func() ([]byte, error) {
+	send("3", func() ([]byte, error) {
 		balances := bc.getBalances(head)
 		data, err := json.MarshalIndent(balances, "", "  ")
 		return data, err
 	})
 
-	send("cod", func() ([]byte, error) {
+	send("4", func() ([]byte, error) {
 		codes := bc.getCodes(head)
 		data, err := json.MarshalIndent(codes, "", "  ")
 		return data, err
 	})
 
-	send("tra", func() ([]byte, error) {
-		traces, err := TracerBlockByNumber(head.NumberU64())
+	send("5", func() ([]byte, error) {
+		traces, err := TracerBlockByNumber(head.NumberU64(), true)
 		if err != nil {
 			return nil, err
 		}
 		data, err := json.MarshalIndent(traces, "", "  ")
 		return data, err
+	})
+
+	send("6", func() ([]byte, error) {
+		traces, err := TracerBlockByNumber(head.NumberU64(), false)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.MarshalIndent(traces, "", "  ")
+		return data, err
+	})
+
+	send("7", func() ([]byte, error) {
+		return []byte(hexutil.EncodeBig(bc.CurrentSafeBlock().Number)), nil
+	})
+
+	send("8", func() ([]byte, error) {
+		return []byte(hexutil.EncodeBig(bc.CurrentFinalBlock().Number)), nil
 	})
 
 	// This goroutine will cancel the context after all the other goroutines have finished.
@@ -184,7 +201,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 	fmt.Println("cache function took", elapsed)
 }
 
-func TracerBlockByNumber(blockNumber uint64) (map[string]json.RawMessage, error) {
+func TracerBlockByNumber(blockNumber uint64, withLogs bool) (json.RawMessage, error) {
 	timeoutDuration, _ := time.ParseDuration("300s")
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	defer cancel()
@@ -195,49 +212,21 @@ func TracerBlockByNumber(blockNumber uint64) (map[string]json.RawMessage, error)
 	}
 
 	blockNum := hexutil.EncodeUint64(blockNumber)
-	var responseWith, responseWithout json.RawMessage
-	var errWith, errWithout error
+	var response json.RawMessage
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	err = rawClient.CallContext(ctx, &response, "debug_traceBlockByNumber", blockNum, map[string]interface{}{
+		"tracer": "callTracer",
+		"tracerConfig": map[string]interface{}{
+			"withLog":     withLogs,
+			"onlyTopCall": false,
+		},
+	})
 
-	go func() {
-		defer wg.Done()
-		errWith = rawClient.CallContext(ctx, &responseWith, "debug_traceBlockByNumber", blockNum, map[string]interface{}{
-			"tracer": "callTracer",
-			"tracerConfig": map[string]interface{}{
-				"withLog":     true,
-				"onlyTopCall": false,
-			},
-		})
-	}()
-
-	go func() {
-		defer wg.Done()
-		errWithout = rawClient.CallContext(ctx, &responseWithout, "debug_traceBlockByNumber", blockNum, map[string]interface{}{
-			"tracer": "callTracer",
-			"tracerConfig": map[string]interface{}{
-				"withLog":     false,
-				"onlyTopCall": false,
-			},
-		})
-	}()
-
-	wg.Wait()
-
-	if errWith != nil {
-		return nil, fmt.Errorf("failed to trace block by number with logs: %v", errWith)
+	if err != nil {
+		return nil, fmt.Errorf("failed to trace block by number: %v", err)
 	}
 
-	if errWithout != nil {
-		return nil, fmt.Errorf("failed to trace block by number without logs: %v", errWithout)
-	}
-
-	result := make(map[string]json.RawMessage)
-	result["with"] = responseWith
-	result["without"] = responseWithout
-
-	return result, nil
+	return response, nil
 }
 
 func (bc *BlockChain) getBalances(head *types.Block) map[common.Address]string {
