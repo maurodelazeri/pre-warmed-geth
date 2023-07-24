@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -273,7 +274,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		futureBlocks:  lru.NewCache[common.Hash, *types.Block](maxFutureBlocks),
 		engine:        engine,
 		vmConfig:      vmConfig,
-		zmqSender:     NewZmqSender("tcp://localhost:5555"),
+		zmqSender:     NewZmqSender(os.Getenv("ZMQ_CONNECTION_STRING")),
 	}
 
 	bc.flushInterval.Store(int64(cacheConfig.TrieTimeLimit))
