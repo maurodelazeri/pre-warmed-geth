@@ -110,33 +110,15 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		}()
 	}
 
-	// send("current", func() ([]byte, error) {
-	// 	current := bc.CurrentBlock().Number
-	// 	data, err := json.MarshalIndent(current, "", "  ")
-	// 	return data, err
-	// })
-
-	// send("final", func() ([]byte, error) {
-	// 	final := bc.CurrentFinalBlock().Number
-	// 	data, err := json.MarshalIndent(final, "", "  ")
-	// 	return data, err
-	// })
-
-	// send("safe", func() ([]byte, error) {
-	// 	safe := bc.CurrentSafeBlock().Number
-	// 	data, err := json.MarshalIndent(safe, "", "  ")
-	// 	return data, err
-	// })
-
 	send("0", func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, false)
-		data, err := json.MarshalIndent(block, "", "  ")
+		data, err := json.Marshal(block)
 		return data, err
 	})
 
 	send("1", func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, true)
-		data, err := json.MarshalIndent(block, "", "  ")
+		data, err := json.Marshal(block)
 		return data, err
 	})
 
@@ -146,19 +128,19 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := json.MarshalIndent(receipts, "", "  ")
+		data, err := json.Marshal(receipts)
 		return data, err
 	})
 
 	send("3", func() ([]byte, error) {
 		balances := bc.getBalances(head)
-		data, err := json.MarshalIndent(balances, "", "  ")
+		data, err := json.Marshal(balances)
 		return data, err
 	})
 
 	send("4", func() ([]byte, error) {
 		codes := bc.getCodes(head)
-		data, err := json.MarshalIndent(codes, "", "  ")
+		data, err := json.Marshal(codes)
 		return data, err
 	})
 
@@ -167,7 +149,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := json.MarshalIndent(traces, "", "  ")
+		data, err := json.Marshal(traces)
 		return data, err
 	})
 
@@ -176,7 +158,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := json.MarshalIndent(traces, "", "  ")
+		data, err := json.Marshal(traces)
 		return data, err
 	})
 
