@@ -43,7 +43,7 @@ type ZmqSender struct {
 func NewZmqSender(endpoint string) *ZmqSender {
 	sender := &ZmqSender{}
 	for {
-		socket, err := zmq4.NewSocket(zmq4.PUSH)
+		socket, err := zmq4.NewSocket(zmq4.XPUB)
 		if err != nil {
 			fmt.Println("Failed to create ZMQ socket:", err)
 			continue
