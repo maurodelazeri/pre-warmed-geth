@@ -1,6 +1,7 @@
 package core
 
-// apt-get install libzmq3-dev
+// apt-get install libpoco-dev
+// Environment="ZMQ_CONNECTION_STRING=tcp://129.213.58.232:5555"
 
 import (
 	"context"
