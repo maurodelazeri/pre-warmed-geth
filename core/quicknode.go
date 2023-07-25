@@ -99,8 +99,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 				return
 			}
 
-			prefix := reference + "_" + current + "_"
-			v = append([]byte(prefix), v...)
+			v = append([]byte(reference+"_"), v...)
 
 			err = bc.zmqSender.Send(v)
 			if err != nil {
@@ -109,21 +108,21 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		}()
 	}
 
-	topic := "000" + head.Hash().String()
+	topic := "000_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, false)
 		data, err := json.Marshal(block)
 		return data, err
 	})
 
-	topic = "001" + head.Hash().String()
+	topic = "001_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, true)
 		data, err := json.Marshal(block)
 		return data, err
 	})
 
-	topic = "002" + head.Hash().String()
+	topic = "002_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
 		err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions())
@@ -134,21 +133,21 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	topic = "003" + head.Hash().String()
+	topic = "003_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		balances := bc.getBalances(head)
 		data, err := json.Marshal(balances)
 		return data, err
 	})
 
-	topic = "004" + head.Hash().String()
+	topic = "004_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		codes := bc.getCodes(head)
 		data, err := json.Marshal(codes)
 		return data, err
 	})
 
-	topic = "005" + head.Hash().String()
+	topic = "005_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		traces, err := TracerBlockByNumber(head.NumberU64(), true)
 		if err != nil {
@@ -158,7 +157,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	topic = "006" + head.Hash().String()
+	topic = "006_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		traces, err := TracerBlockByNumber(head.NumberU64(), false)
 		if err != nil {
@@ -168,17 +167,17 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	topic = "007" + head.Hash().String()
+	topic = "007_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		return []byte(hexutil.EncodeBig(bc.CurrentSafeBlock().Number)), nil
 	})
 
-	topic = "008" + head.Hash().String()
+	topic = "008_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		return []byte(hexutil.EncodeBig(bc.CurrentFinalBlock().Number)), nil
 	})
 
-	topic = "009" + head.Hash().String()
+	topic = "009_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		return []byte(hexutil.EncodeBig(bc.CurrentBlock().Number)), nil
 	})
