@@ -170,6 +170,10 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return []byte(hexutil.EncodeBig(bc.CurrentFinalBlock().Number)), nil
 	})
 
+	send("9", func() ([]byte, error) {
+		return []byte(hexutil.EncodeBig(bc.CurrentBlock().Number)), nil
+	})
+
 	// This goroutine will cancel the context after all the other goroutines have finished.
 	go func() {
 		wg.Wait()
