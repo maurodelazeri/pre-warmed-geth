@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"strings"
 	"sync"
 	"time"
 
@@ -80,7 +79,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 
 	var wg sync.WaitGroup
 
-	current := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentBlock().Number), "0x")
+	current := hexutil.EncodeBig(bc.CurrentBlock().Number)
 	// safe := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentSafeBlock().Number), "0x")
 	// final := strings.TrimPrefix(hexutil.EncodeBig(bc.CurrentFinalBlock().Number), "0x")
 
@@ -100,7 +99,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 				return
 			}
 
-			prefix := reference + "_" + current
+			prefix := reference + "_" + current + "_"
 			v = append([]byte(prefix), v...)
 
 			err = bc.zmqSender.Send(v)
@@ -110,19 +109,22 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		}()
 	}
 
-	send("0", func() ([]byte, error) {
+	topic := "000" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, false)
 		data, err := json.Marshal(block)
 		return data, err
 	})
 
-	send("1", func() ([]byte, error) {
+	topic = "001" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, true)
 		data, err := json.Marshal(block)
 		return data, err
 	})
 
-	send("2", func() ([]byte, error) {
+	topic = "002" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		receipts := rawdb.ReadRawReceipts(bc.db, head.Hash(), head.NumberU64())
 		err := receipts.DeriveFields(bc.chainConfig, head.Hash(), head.NumberU64(), head.Time(), head.BaseFee(), head.Transactions())
 		if err != nil {
@@ -132,19 +134,22 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	send("3", func() ([]byte, error) {
+	topic = "003" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		balances := bc.getBalances(head)
 		data, err := json.Marshal(balances)
 		return data, err
 	})
 
-	send("4", func() ([]byte, error) {
+	topic = "004" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		codes := bc.getCodes(head)
 		data, err := json.Marshal(codes)
 		return data, err
 	})
 
-	send("5", func() ([]byte, error) {
+	topic = "005" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		traces, err := TracerBlockByNumber(head.NumberU64(), true)
 		if err != nil {
 			return nil, err
@@ -153,7 +158,8 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	send("6", func() ([]byte, error) {
+	topic = "006" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		traces, err := TracerBlockByNumber(head.NumberU64(), false)
 		if err != nil {
 			return nil, err
@@ -162,15 +168,18 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return data, err
 	})
 
-	send("7", func() ([]byte, error) {
+	topic = "007" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		return []byte(hexutil.EncodeBig(bc.CurrentSafeBlock().Number)), nil
 	})
 
-	send("8", func() ([]byte, error) {
+	topic = "008" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		return []byte(hexutil.EncodeBig(bc.CurrentFinalBlock().Number)), nil
 	})
 
-	send("9", func() ([]byte, error) {
+	topic = "009" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
 		return []byte(hexutil.EncodeBig(bc.CurrentBlock().Number)), nil
 	})
 
