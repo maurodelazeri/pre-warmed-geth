@@ -198,7 +198,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 	<-ctx.Done()
 
 	elapsed := time.Since(start)
-	fmt.Println("cache function took", elapsed)
+	fmt.Println("QN cache function took", elapsed)
 }
 
 func TracerBlockByNumber(blockNumber uint64, withLogs bool) (gjson.RawMessage, error) {
