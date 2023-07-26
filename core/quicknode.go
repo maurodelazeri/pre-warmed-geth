@@ -183,6 +183,11 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		return []byte(hexutil.EncodeBig(bc.CurrentBlock().Number)), nil
 	})
 
+	topic = "010_" + current + "_" + head.Hash().String()
+	send(topic, func() ([]byte, error) {
+		return []byte(bc.getGasPrice()), nil
+	})
+
 	// This goroutine will cancel the context after all the other goroutines have finished.
 	go func() {
 		wg.Wait()
@@ -369,6 +374,26 @@ func (bc *BlockChain) getCodes(head *types.Block) map[common.Address][]byte {
 	}
 
 	return results
+}
+
+// gasPrice
+func (bc *BlockChain) getGasPrice() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rawClient, err := rpc.DialContext(ctx, "http://127.0.0.1:8545")
+	if err != nil {
+		fmt.Println("Failed to connect to the Ethereum client: ", err)
+		return ""
+	}
+
+	var hexGasPrice string
+	err = rawClient.CallContext(ctx, &hexGasPrice, "eth_gasPrice")
+	if err != nil {
+		fmt.Println("Failed to get gas price", err)
+		return ""
+	}
+	return hexGasPrice
 }
 
 // getBlockByNumber
