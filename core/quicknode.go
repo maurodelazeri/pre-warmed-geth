@@ -5,11 +5,12 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"sync"
 	"time"
+
+	gjson "github.com/goccy/go-json"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -32,7 +33,7 @@ type Data struct {
 	Safe              *big.Int
 	Codes             map[common.Address][]byte
 	Balances          map[common.Address]string
-	Traces            map[string]json.RawMessage
+	Traces            map[string]gjson.RawMessage
 }
 
 type ZmqSender struct {
@@ -111,14 +112,14 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 	topic := "000_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, false)
-		data, err := json.Marshal(block)
+		data, err := gjson.Marshal(block)
 		return data, err
 	})
 
 	topic = "001_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		block := bc.getBlockByNumber(head, true, true)
-		data, err := json.Marshal(block)
+		data, err := gjson.Marshal(block)
 		return data, err
 	})
 
@@ -129,21 +130,21 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := json.Marshal(receipts)
+		data, err := gjson.Marshal(receipts)
 		return data, err
 	})
 
 	topic = "003_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		balances := bc.getBalances(head)
-		data, err := json.Marshal(balances)
+		data, err := gjson.Marshal(balances)
 		return data, err
 	})
 
 	topic = "004_" + current + "_" + head.Hash().String()
 	send(topic, func() ([]byte, error) {
 		codes := bc.getCodes(head)
-		data, err := json.Marshal(codes)
+		data, err := gjson.Marshal(codes)
 		return data, err
 	})
 
@@ -153,7 +154,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := json.Marshal(traces)
+		data, err := gjson.Marshal(traces)
 		return data, err
 	})
 
@@ -163,7 +164,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := json.Marshal(traces)
+		data, err := gjson.Marshal(traces)
 		return data, err
 	})
 
@@ -195,7 +196,7 @@ func (bc *BlockChain) QNCache(head *types.Block) {
 	fmt.Println("cache function took", elapsed)
 }
 
-func TracerBlockByNumber(blockNumber uint64, withLogs bool) (json.RawMessage, error) {
+func TracerBlockByNumber(blockNumber uint64, withLogs bool) (gjson.RawMessage, error) {
 	timeoutDuration, _ := time.ParseDuration("300s")
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	defer cancel()
@@ -206,7 +207,7 @@ func TracerBlockByNumber(blockNumber uint64, withLogs bool) (json.RawMessage, er
 	}
 
 	blockNum := hexutil.EncodeUint64(blockNumber)
-	var response json.RawMessage
+	var response gjson.RawMessage
 
 	err = rawClient.CallContext(ctx, &response, "debug_traceBlockByNumber", blockNum, map[string]interface{}{
 		"tracer": "callTracer",
